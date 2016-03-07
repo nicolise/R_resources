@@ -9,6 +9,7 @@ setwd("~/PATH/TO/DIRECTORY/")
 getwd()
 MyDat <- read.csv("FILENAME.csv")
 names(MyDat)
+view(MyDat)
 
 #check structure of new object
 str(MyDat)
@@ -61,9 +62,50 @@ library(plyr); library(dplyr)
 #check data structure
 xtabs(~ INDVAR1 + INDVAR2, MyDat4)
 
-#check normality of your dependent variable
+#check assumption of normality of your dependent variable
+attach(MyDat4)
+#graphically...
+hist(DEPVAR)
+#more graphs
+require(car); require(MASS)
+MyDat4$DEPVAR.t <- MyDat4$DEPVAR + 1
+#is it more normal or log-normal?
+qqp(MyDat4$DEPVAR.t, "norm")
+qqp(MyDat4$DEPVAR.t, "lnorm")
 
+#statistically...
+shapiro.test(DEPVAR)
 
+#try transformations
+transf <- (log((DEPVAR)))
+hist(transf)
+shapiro.test(transf)
+
+#negative skew: small to large
+transf <- (DEPVAR)^2
+transf <- (DEPVAR)^3
+#positive skew: small to large
+transf <- (DEPVAR)^.5
+transf <- log(DEPVAR)
+transf <- log10(DEPVAR)
+transf <- (-1/((DEPVAR)^.5))
+
+#other options for normalization
+transf <- MyDat4$DEPVAR / sum(MyDat4$DEPVAR)
+transf <- MyDat4$DEPVAR / sqrt(sum(MyDat4$DEPVAR * MyDat4$DEPVAR))
+
+#transform your dependent variable if necessary
+MyDat4 <-transform(MyDat4, TRANSFORMED = (DEPVAR^2))
+attach(MyDat4)
+
+#next check assumption of homoscedasticity
+#graphically...
+boxplot(traf~INDVAR1*INDVAR2,
+        ylab="YTITLE", main="PLOTTITLE", las=3)
+#statistically...
+bartlett.test(traf~INDVAR1*INDVAR2) 
+leveneTest(traf~INDVAR1)
+var.test(traf~INDVAR1)
 #---------------------------------------------------------
 #Power analysis: have you collected enough data?
 library(pwr)
@@ -81,88 +123,34 @@ pwr.f2.test(u=2, v=294, sig.level=0.05, power=0.8)
 #by convention, f2 0.02 is small, 0.15 is medium, 0.35 is large
 
 #---------------------------------------------------------
-#delete these?
-require(car)
-require(MASS)
-ModDat$Scale.LS.t <- ModDat$Scale.LS + 1
-#fairly normal
-qqp(ModDat$Scale.LS.t, "norm")
-#definitely not log-normal
-qqp(ModDat$Scale.LS.t, "lnorm")
-#data must be integers for the rest
-ModDat$Scale.LS.i <- ModDat$Scale.LS*100 + 100
-ModDat$Scale.LS.i <- round(ModDat$Scale.LS.i)
-#negative binomial looks sort of close, but losing information in the conversion?
-nbinom <- fitdistr(ModDat$Scale.LS.i, "Negative Binomial")
-qqp(ModDat$Scale.LS.i, "nbinom", size = nbinom$estimate[[1]], mu = nbinom$estimate[[2]])
-poisson <- fitdistr(ModDat$Scale.LS.i, "Poisson")
-qqp(ModDat$Scale.LS.i, "pois", poisson$estimate)
+#now we get to actually do an ANOVA!
 
-#histogram of data-- goal to compare to poisson / negative binomial
-dat <- hist(ModDat$Scale.LS.i, breaks=20)
-hist(ModDat$Scale.LS, breaks=20)
-dat
-mids <- c(110, 130, 150, 170, 190, 210, 230, 250, 270, 290, 310, 330, 350, 370, 390, 410, 430, 450, 470, 490, 510, 530)
-counts <- c(1813,  850,  782,  649,  553,  471,  353,  242,  184,  141,   93,   61,   30,   19,   13,    6,   10,  3,    6,    3,    1,    2)
-histdat <- data.frame(cbind(mids,counts))
+#PARAMETRIC TESTS
+#two-way ANOVA
+MY.ANOVA <- anova(lm(traf~INDVAR1*INDVAR2))
+summary(MY.ANOVA)
+MY.ANOVA 
+interaction.plot(INDVAR1,INDVAR2,traf)
 
-#overlay negative binomial
-#simplest normalization
-ModDat$Nmod <- ModDat$Scale.LS / sum(ModDat$Scale.LS)
-#alternative normalization
-#temp$Nmod <- temp$N / sqrt(sum(temp$N * temp$N))
-histdat$pois <- dpois(histdat$mids, lambda = mean(histdat$counts))
-histdat$nbinom <- dnbinom(histdat$counts, mu = mean(histdat$counts), size = 1)
-ggplot(histdat, aes(x=mids, y=counts)) +
-  geom_histogram(stat="identity", binwidth = 2.5) +
-  theme(panel.grid.minor.x=element_blank(),
-        panel.grid.major.x=element_blank()) + 
-  geom_line(aes(y = pois), col = "red") + 
-  geom_line(aes(y = nbinom), col = "blue")
+#another way to two-way ANOVA
+MYMOD.aov <- aov(traf~INDVAR1*INDVAR2)
+plot(MYMOD.aov)
+summary(MYMOD.aov)
 
-#----------------------------------------------------------------------
-#AgFlat is nested within ExpBlock
-#and both are random
-#Leaf is nested within Plant
-#and both are random
-#And we can consider Pgeno to be nested within Species
-#Igeno, Species, Pgeno, AorB are fixed
+#one more assumption to check: are your residuals normally distributed?
+MYResid <-lm(traf~INDVAR1*INDVAR2)
+#run shapiro-wilk goodness of fit test on the residuals
+shapiro.test(residuals(MYResid))
 
-library(lme4); library(car); library(lmerTest)
-#Anova(Mod, type=2)
-#anova(Mod)
-#Variance output of summary(Mod) gives you SS for the random factors
-#rand(Mod) gives Chi-sq  and P values for random factors in packages lmerTest
-#SPmodD <- lmer(Scale.LS ~ Igeno + Pgeno + Igeno:Pgeno + (1|ExpBlock/AgFlat) + AorB + (1|ExpBlock) + (1|Plant), data = MDdomest)
+#Post-hoc tests: which LEVELS under your independent variables differ?
+TukeyHSD(MYMOD.aov)
+interaction.plot(INDVAR1,INDVAR2,traf)
 
-#linear model
-#nesting: B within A as A/B or A + A:B
-#fixed effects: PInLflt
-#random effects: PPlant, Isolate, PInPlant, PInLeaf, Pexp
-#ExpBlock and AgFlat as random effects
-#but maybe include a random term for "bench"??
-#ExpBlock/Bench/AgFlat
+#----------------------------------------------------------------
+#nonparametric alternatives to ANOVA
+#Kruskal-Wallis: nonparametric one-way ANOVA
+kruskal.test(DEPVAR~INDVAR)
 
-#nesting terms are already included- don't need to add Species as a separate term BUT for random effects (ExpBlock alone) do need a separate term
-#PlGenoNm is a term nested within Species (but not CODED as if nested within Species = it's not an implicitly nested factor)
-#AgFlat IS implicitly nested within ExpBlock -- let's fix this
-#non-numeric factors to use: Igeno, PlGenoNm, Species, ExpBlock, AgFlat
-#expblock is only 6 terms so I'm going to include it as a fixed effect
-
-#optional to fix: coding of AgFlat so that it is not implicitly nested
-Sys.time()
-#fullmod <- lmer(Scale.LS ~ Igeno + Species/PlGenoNm + Igeno:Species/PlGenoNm + Igeno:Species + ExpBlock + (1|ExpBlock/AgFlat) + (1|IndPlant) + AorB , data = ModDat)
-#trying: LesionWpi.lm and LesionWOpi.lm
-LesionWpi.lm <- lmer(Scale.LS ~ Igeno + Species/PlGenoNm + Igeno:Species/PlGenoNm + Igeno:Species + ExpBlock + (1|ExpBlock/AgFlat) + (1|IndPlant) + AorB , data = ModDat)
-LesionWOpi.lm <- lmer(Scale.LS ~ Igeno + Species/PlGenoNm + Igeno:Species + ExpBlock + (1|ExpBlock/AgFlat) + (1|IndPlant) + AorB , data = ModDat)
-Sys.time()
-sink(file='output021716.txt')
-Sys.time()
-#summary(fullmod) # the code generating output
-#Sys.time()
-rand(fullmod)
-Anova(fullmod, type=2)
-anova(fullmod)
-Sys.time()
-sink()
-
+#nonparametric alternative to two-way ANOVA
+#equivalent to sign test if 2 columns
+friedman.test(DEPVAR~INDVAR1|INDVAR2,data=MyDat4)
